@@ -4,7 +4,7 @@
 
 LiquidCrystal_I2C lcd(0x27, 20, 4); // Adjust address if needed
 
-void welcomeScreen() {
+void startScreen() {
   lcd.clear();
   lcd.setCursor(0, 1);
   lcd.print("Welcome!");
@@ -46,19 +46,17 @@ void dispensingProduct(String product) {
   lcd.print(product);
 }
 
-void thankYouScreen() {
+void endScreen() {
   lcd.clear();
   lcd.setCursor(4, 1);
   lcd.print("Thank You!");
-  lcd.setCursor(3, 2);
-  lcd.print("Please wait 3 sec...");
   delay(3000); // 3-second delay
 }
 
 void setup() {
   lcd.init();
   lcd.backlight();
-  welcomeScreen();
+  startScreen();
 }
 
 void loop() {
@@ -70,7 +68,7 @@ void loop() {
   delay(2000);
   dispensingProduct("Downy");
   delay(2000);
-  thankYouScreen();
+  endScreen();
   delay(2000);
-  welcomeScreen();
+  startScreen();
 }
