@@ -60,7 +60,7 @@ unsigned long selectionTime = 0;
 unsigned long lastBlinkTime = 0;
 bool textVisible = true;
 
-int remainVolumeAriel = 800;
+int remainVolumeAriel = 50;
 int remainVolumeDowny = 200; 
 int remainVolumeJoy = 400;
 
@@ -335,6 +335,10 @@ void loop() {
         } else { // High level (Green)
           ArielLEDs(2);
         }
+        lcd.setCursor(1, 2);
+        lcd.print("Avail: ");
+        lcd.print(remainVolumeAriel);
+        lcd.print(" mL");
 
         selectedProduct = 1;
         break;
@@ -348,6 +352,11 @@ void loop() {
         } else { // High level (Green)
           DownyLEDs(2);
         }
+        lcd.setCursor(1, 2);
+        lcd.print("Avail: ");
+        lcd.print(remainVolumeDowny);
+        lcd.print(" mL");
+
         selectedProduct = 2;
         break;
 
@@ -360,27 +369,58 @@ void loop() {
         } else { // High level (Green)
           JoyLEDs(2);
         }
-
+        lcd.setCursor(1, 2);
+        lcd.print("Avail: ");
+        lcd.print(remainVolumeJoy);
+        lcd.print(" mL");
         selectedProduct = 3;
         break;
     }
   }
 
-    // Blinking "Enter your Payment." text
-  if (selectionMade && !paymentScreenActive) {
-    if (currentMillis - lastBlinkTime >= 500) { // Blink every 500ms
-      lastBlinkTime = currentMillis;
-      textVisible = !textVisible;
+// Blinking "Enter your Payment." or "OUT OF STOCK" text
+if (selectionMade && !paymentScreenActive) {
+  if (currentMillis - lastBlinkTime >= 500) { // Blink every 500ms
+    lastBlinkTime = currentMillis;
+    textVisible = !textVisible;
 
+    // Check if the selected product is out of stock
+    bool isOutOfStock = false;
+    switch (selectedProduct) {
+      case 1: // Ariel
+        if (remainVolumeAriel <= 200) { // Red LED threshold for Ariel
+          isOutOfStock = true;
+        }
+        break;
+      case 2: // Downy
+        if (remainVolumeDowny <= 150) { // Red LED threshold for Downy
+          isOutOfStock = true;
+        }
+        break;
+      case 3: // Joy
+        if (remainVolumeJoy <= 100) { // Red LED threshold for Joy
+          isOutOfStock = true;
+        }
+        break;
+    }
+
+    // Display the appropriate message
+    lcd.setCursor(1, 3);
+    if (isOutOfStock) {
       if (textVisible) {
-        lcd.setCursor(1, 3);
+        lcd.print("Insufficient Stock");
+      } else {
+        lcd.print("                   ");
+      }
+    } else {
+      if (textVisible) {
         lcd.print("Enter your Payment.");
       } else {
-        lcd.setCursor(1, 3);
-        lcd.print("                   "); // Clear the line
+        lcd.print("                   ");
       }
     }
   }
+}
 
   // Handle coin insertion
   if (coinInserted) {
