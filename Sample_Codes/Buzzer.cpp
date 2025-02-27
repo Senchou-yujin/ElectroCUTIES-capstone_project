@@ -1,6 +1,6 @@
 #include <Arduino.h>
 
-#define BUZZER_PIN 37  // Adjust to your actual pin
+#define BUZZER_PIN 30  // Adjust to your actual pin
 
 // Alarm Sound Coding
 void beep(int tone0) {

@@ -8,7 +8,8 @@
 #define buttPin2 24   // Pin for Button 2
 #define buttPin3 26   // Pin for Button 3
 #define buttPin4 28   // Pin for Button 4
-#define BUZZER_PIN 30 // Pin for Buzzer Module
+//Universal Coin Selector
+#define COIN_PIN 5  // Coin acceptor signal pin
 //Mosfet Module
 #define MOSFET_Ariel 2  // Pump for Ariel
 #define MOSFET_Downy 3  // Pump for Downy
@@ -46,54 +47,57 @@ NewPing ariel(TRIGGER_ARIEL, ECHO_ARIEL, MAX_DISTANCE);
 NewPing downy(TRIGGER_DOWNY, ECHO_DOWNY, MAX_DISTANCE);
 NewPing joy(TRIGGER_JOY, ECHO_JOY, MAX_DISTANCE);
 
-void setupLEDindicator(int redPin, int yellowPin, int greenPin) {
-    pinMode(redPin, OUTPUT);
-    pinMode(yellowPin, OUTPUT);
-    pinMode(greenPin, OUTPUT);
+volatile int coinCount = 0;
+volatile bool coinInserted = false;
+volatile unsigned long lastInterruptTime = 0;
 
-    digitalWrite(redPin, LOW);
-    digitalWrite(yellowPin, LOW);
-    digitalWrite(greenPin, LOW);
-}
-
-// Alarm Sound Coding
-void beep(int tone0) {
-  // Beep the Buzzer
-  tone(BUZZER_PIN, tone0);
-  delay(100);
-  noTone(BUZZER_PIN);
-}
-
-void beeptwice(int tone1, int tone2) {
-  // Beep the Buzzer twice
-  tone(BUZZER_PIN, tone1);
-  delay(100);
-  tone(BUZZER_PIN, tone2);
-  delay(100);
-  noTone(BUZZER_PIN);
+void coinISR() {
+  unsigned long interruptTime = millis();
+  
+  if (interruptTime - lastInterruptTime > 100) {  // Adjust debounce if needed
+    delay(5);  // Helps filter out noise
+    coinInserted = true;
+    Serial.println("ISR Triggered");  // Debug message
+  }
+  
+  lastInterruptTime = interruptTime;
 }
 
 void startScreen() {
   lcd.clear();
-  lcd.setCursor(0, 1);
+  lcd.setCursor(6, 1);
   lcd.print("Welcome!");
   lcd.setCursor(0, 2);
   lcd.print("Enter your payment.");
 }
 
-void paymentConfirmation(int amount, int volume) {
+
+void paymentConfirmation(int amount) {
+  int arielVolume = (coinCount / 5) * 20;  // Ariel: PHP 5.00 per 20ml
+  int downyVolume = (coinCount / 5) * 20;  // Downy: PHP 5.00 per 20ml
+  int joyVolume = (coinCount / 5) * 15;    // Joy: PHP 5.00 per 15ml
+
   lcd.clear();
-  lcd.setCursor(1, 0);
-  lcd.print("Amount Entered:");
-  lcd.setCursor(5, 1);
-  lcd.print(amount);
-  
-  lcd.setCursor(1, 2);
-  lcd.print("Volume Equivalent:");
-  lcd.setCursor(5, 3);
-  lcd.print(volume);
+  lcd.setCursor(2, 0);
+  lcd.print("Total Amount: PHP ");
+  lcd.print(coinCount);
+
+  lcd.setCursor(0, 1);
+  lcd.print("Ariel : ");
+  lcd.print(arielVolume);
+  lcd.print(" ml");
+
+  lcd.setCursor(0, 2);
+  lcd.print("Downy : ");
+  lcd.print(downyVolume);
+  lcd.print(" ml");
+
+  lcd.setCursor(0, 3);
+  lcd.print("Joy : ");
+  lcd.print(joyVolume);
   lcd.print(" ml");
 }
+
 
 void productSelection() {
   lcd.clear();
@@ -136,7 +140,9 @@ void setup() {
   pinMode(buttPin2, INPUT_PULLUP);
   pinMode(buttPin3, INPUT_PULLUP);
   pinMode(buttPin4, INPUT_PULLUP);
-  pinMode(BUZZER_PIN, OUTPUT);
+  //Universal Coin Selector
+  pinMode(COIN_PIN, INPUT_PULLUP);  // Use internal pull-up or try external 10kΩ
+  attachInterrupt(digitalPinToInterrupt(COIN_PIN), coinISR, RISING);
   //MOSFETS
   pinMode(MOSFET_Ariel, OUTPUT);
   pinMode(MOSFET_Downy, OUTPUT);
@@ -165,7 +171,6 @@ void setup() {
   digitalWrite(RED_JOY, LOW);
   digitalWrite(YELLOW_JOY, LOW);
   digitalWrite(GREEN_JOY, LOW);
-  digitalWrite(BUZZER_PIN, HIGH);
   digitalWrite(MOSFET_Ariel, LOW);
   digitalWrite(MOSFET_Downy, LOW); 
   digitalWrite(MOSFET_Joy, LOW); 
@@ -173,7 +178,21 @@ void setup() {
 }
 
 void loop() {
+  static int lastCoinCount = 0;
 
+  if (coinInserted) {  
+    coinInserted = false;
+    coinCount++;
+
+    Serial.print("Coin inserted. Total: ");
+    Serial.println(coinCount);
+
+    if (coinCount != lastCoinCount) {
+      paymentConfirmation(coinCount);
+      lastCoinCount = coinCount;
+    }
+  }
 }
+
 
 
