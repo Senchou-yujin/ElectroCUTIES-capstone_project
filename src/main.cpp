@@ -52,13 +52,18 @@ volatile int coinCount = 0;
 volatile bool coinInserted = false;
 volatile unsigned long lastInterruptTime = 0;
 
+unsigned long lastScreenChange = 0;
+bool showStartScreen = true;
+bool selectionMade = false;
+unsigned long selectionTime = 0;
+
 void coinISR() {
   unsigned long interruptTime = millis();
   
   if (interruptTime - lastInterruptTime > 100) {  // Adjust debounce if needed
     delay(5);  // Helps filter out noise
     coinInserted = true;
-    Serial.println("ISR Triggered");  // Debug message
+   //Serial.println("ISR Triggered");  // Debug message
   }
   
   lastInterruptTime = interruptTime;
@@ -69,7 +74,7 @@ void startScreen() {
   lcd.setCursor(6, 1);
   lcd.print("Welcome!");
   lcd.setCursor(0, 2);
-  lcd.print("Enter your payment.");
+  lcd.print("Select Your Product.");
 }
 
 
@@ -179,18 +184,56 @@ void setup() {
 }
 
 void loop() {
-  static int lastCoinCount = 0;
-  if (coinInserted) {  
-    coinInserted = false;
-    coinCount++;
+  unsigned long currentMillis = millis();
+  int selectButton = 0;
 
-    Serial.print("Coin inserted. Total: ");
-    Serial.println(coinCount);
+  if (!selectionMade && (currentMillis - lastScreenChange >= 3000)) {
+    lastScreenChange = currentMillis;
 
-    if (coinCount != lastCoinCount) {
-      paymentConfirmation(coinCount);
-      lastCoinCount = coinCount;
+    if (showStartScreen) {
+      startScreen();
+    } else {
+      productSelection();
     }
+    
+    showStartScreen = !showStartScreen;
+  }
+
+  if (digitalRead(buttPin1) == LOW) {
+      Serial.println("Button 1 Pressed!");
+      selectButton = 1;
+  }
+  if (digitalRead(buttPin2) == LOW) {
+      Serial.println("Button 2 Pressed!");
+      selectButton = 2;
+  }
+  if (digitalRead(buttPin3) == LOW) {
+      Serial.println("Button 3 Pressed!");
+      selectButton = 3;
+  }
+  if (digitalRead(buttPin4) == LOW) {
+      Serial.println("Button 4 Pressed!");
+      selectButton = 4;
+  }
+
+
+  if (selectButton > 0) {
+    selectionMade = true;
+    lcd.clear();
+    
+    switch (selectButton) {
+      case 1:
+        dispensingProduct("Ariel");
+        break;
+      case 2:
+        dispensingProduct("Downy");
+        break;
+      case 3:
+        dispensingProduct("Joy");
+        break;
+    }
+    
+    delay(500);
   }
 }
 
