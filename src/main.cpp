@@ -51,11 +51,14 @@ NewPing joy(TRIGGER_JOY, ECHO_JOY, MAX_DISTANCE);
 volatile int coinCount = 0;
 volatile bool coinInserted = false;
 volatile unsigned long lastInterruptTime = 0;
-
 unsigned long lastScreenChange = 0;
 bool showStartScreen = true;
 bool selectionMade = false;
+bool paymentScreenActive = false;
+int selectedProduct = 0;
 unsigned long selectionTime = 0;
+unsigned long lastBlinkTime = 0;
+bool textVisible = true;
 
 void coinISR() {
   unsigned long interruptTime = millis();
@@ -78,30 +81,55 @@ void startScreen() {
 }
 
 
-void paymentConfirmation(int amount) {
-  int arielVolume = (coinCount / 5) * 20;  // Ariel: PHP 5.00 per 20ml
-  int downyVolume = (coinCount / 5) * 20;  // Downy: PHP 5.00 per 20ml
-  int joyVolume = (coinCount / 5) * 15;    // Joy: PHP 5.00 per 15ml
+void arielPaymentConfirmation(int amount) {
+  int arielVolume = (amount / 5) * 20 + (amount % 5) * 4;  // Ariel: PHP 5.00 per 20ml
 
   lcd.clear();
-  lcd.setCursor(2, 0);
+  lcd.setCursor(0, 0);
   lcd.print("Total Amount: PHP ");
-  lcd.print(coinCount);
+  lcd.print(amount);
 
   lcd.setCursor(0, 1);
   lcd.print("Ariel : ");
   lcd.print(arielVolume);
   lcd.print(" ml");
 
-  lcd.setCursor(0, 2);
+  lcd.setCursor(0, 3);
+  lcd.print("##PRESS DONE##");
+}
+
+void downyPaymentConfirmation(int amount) {
+  int downyVolume = (amount / 5) * 18 + (amount % 5) * 3.6;  // Downy: PHP 5.00 per 18ml
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Total Amount: ");
+  lcd.print(amount);
+
+  lcd.setCursor(0, 1);
   lcd.print("Downy : ");
   lcd.print(downyVolume);
   lcd.print(" ml");
 
   lcd.setCursor(0, 3);
+  lcd.print("##PRESS DONE##");
+}
+
+void joyPaymentConfirmation(int amount) {
+  int joyVolume = (amount / 5) * 16 + (amount % 5) * 3.2;  // Joy: PHP 5.00 per 16ml
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Total Amount: PHP ");
+  lcd.print(amount);
+
+  lcd.setCursor(0, 1);
   lcd.print("Joy : ");
   lcd.print(joyVolume);
   lcd.print(" ml");
+
+  lcd.setCursor(0, 3);
+  lcd.print("##PRESS DONE##");
 }
 
 
@@ -115,6 +143,17 @@ void productSelection() {
   lcd.print("2. Downy Softener");
   lcd.setCursor(2, 3);
   lcd.print("3. Joy Dishwashing");
+}
+
+void displayChosenProduct(String product) {
+  lcd.clear();
+  lcd.setCursor(2, 0);
+  lcd.print("Selected Product:");
+  lcd.setCursor(4, 1);
+  lcd.print(">> ");
+  lcd.print(product);
+  lcd.setCursor(1, 3);
+  lcd.print("Enter your Payment.");
 }
 
 void dispensingProduct(String product) {
@@ -217,25 +256,75 @@ void loop() {
   }
 
 
-  if (selectButton > 0) {
+// Handle product selection
+  if (selectButton > 0 && !selectionMade) {
     selectionMade = true;
     lcd.clear();
     
     switch (selectButton) {
       case 1:
-        dispensingProduct("Ariel");
+        displayChosenProduct("Ariel");
+        selectedProduct = 1;
         break;
       case 2:
-        dispensingProduct("Downy");
+        displayChosenProduct("Downy");
+        selectedProduct = 2;
         break;
       case 3:
-        dispensingProduct("Joy");
+        displayChosenProduct("Joy");
+        selectedProduct = 3;
         break;
     }
-    
-    delay(500);
   }
+
+    // Blinking "Enter your Payment." text
+  if (selectionMade && !paymentScreenActive) {
+    if (currentMillis - lastBlinkTime >= 500) { // Blink every 500ms
+      lastBlinkTime = currentMillis;
+      textVisible = !textVisible;
+
+      if (textVisible) {
+        lcd.setCursor(1, 3);
+        lcd.print("Enter your Payment.");
+      } else {
+        lcd.setCursor(1, 3);
+        lcd.print("                   "); // Clear the line
+      }
+    }
+  }
+
+  // Handle coin insertion
+  if (coinInserted) {
+    coinInserted = false;
+    coinCount++;
+
+    Serial.print("Coin inserted. Total: ");
+    Serial.println(coinCount);
+
+    // Switch to payment confirmation screen
+    paymentScreenActive = true;
+    switch (selectedProduct) {
+      case 1:
+        arielPaymentConfirmation(coinCount);
+        break;
+      case 2:
+        downyPaymentConfirmation(coinCount);
+        break;
+      case 3:
+        joyPaymentConfirmation(coinCount);
+        break;
+    }
+  }
+  //   // Reset after payment is completed (optional)
+  // if (paymentScreenActive && coinCount >= requiredCoins) {
+  //   // Reset for the next transaction
+  //   selectionMade = false;
+  //   paymentScreenActive = false;
+  //   coinCount = 0;
+  //   selectedProduct = "";
+  // }
 }
+
 
 
 

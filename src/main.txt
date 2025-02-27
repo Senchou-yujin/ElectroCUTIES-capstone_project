@@ -9,10 +9,12 @@
 #define buttPin3 26   // Pin for Button 3
 #define buttPin4 28   // Pin for Button 4
 #define BUZZER_PIN 30 // Pin for Buzzer Module
+//Universal Coin Selector
+#define COIN_PIN 2  // Coin acceptor signal pin
 //Mosfet Module
-#define MOSFET_Ariel 2  // Pump for Ariel
-#define MOSFET_Downy 3  // Pump for Downy
-#define MOSFET_Joy 4  // Pump for Joy
+#define MOSFET_Ariel 3  // Pump for Ariel
+#define MOSFET_Downy 4  // Pump for Downy
+#define MOSFET_Joy 5  // Pump for Joy
 // Ariel Liquid Detergent Indicator LED
 #define RED_ARIEL 32
 #define YELLOW_ARIEL 34
@@ -46,54 +48,79 @@ NewPing ariel(TRIGGER_ARIEL, ECHO_ARIEL, MAX_DISTANCE);
 NewPing downy(TRIGGER_DOWNY, ECHO_DOWNY, MAX_DISTANCE);
 NewPing joy(TRIGGER_JOY, ECHO_JOY, MAX_DISTANCE);
 
-void setupLEDindicator(int redPin, int yellowPin, int greenPin) {
-    pinMode(redPin, OUTPUT);
-    pinMode(yellowPin, OUTPUT);
-    pinMode(greenPin, OUTPUT);
+volatile int coinCount = 0;
+volatile bool coinInserted = false;
+volatile unsigned long lastInterruptTime = 0;
+unsigned long lastScreenChange = 0;
+bool showStartScreen = true;
+bool selectionMade = false;
+bool paymentScreenActive = false;
+int selectedProduct = 0;
+unsigned long selectionTime = 0;
 
-    digitalWrite(redPin, LOW);
-    digitalWrite(yellowPin, LOW);
-    digitalWrite(greenPin, LOW);
-}
-
-// Alarm Sound Coding
-void beep(int tone0) {
-  // Beep the Buzzer
-  tone(BUZZER_PIN, tone0);
-  delay(100);
-  noTone(BUZZER_PIN);
-}
-
-void beeptwice(int tone1, int tone2) {
-  // Beep the Buzzer twice
-  tone(BUZZER_PIN, tone1);
-  delay(100);
-  tone(BUZZER_PIN, tone2);
-  delay(100);
-  noTone(BUZZER_PIN);
+void coinISR() {
+  unsigned long interruptTime = millis();
+  
+  if (interruptTime - lastInterruptTime > 100) {  // Adjust debounce if needed
+    delay(5);  // Helps filter out noise
+    coinInserted = true;
+   //Serial.println("ISR Triggered");  // Debug message
+  }
+  
+  lastInterruptTime = interruptTime;
 }
 
 void startScreen() {
   lcd.clear();
-  lcd.setCursor(0, 1);
+  lcd.setCursor(6, 1);
   lcd.print("Welcome!");
   lcd.setCursor(0, 2);
-  lcd.print("Enter your payment.");
+  lcd.print("Select Your Product.");
 }
 
-void paymentConfirmation(int amount, int volume) {
+
+void arielPaymentConfirmation(int amount) {
+  int arielVolume = (amount / 5) * 20;  // Ariel: PHP 5.00 per 20ml
+
   lcd.clear();
-  lcd.setCursor(1, 0);
-  lcd.print("Amount Entered:");
-  lcd.setCursor(5, 1);
+  lcd.setCursor(2, 0);
+  lcd.print("Total Amount: PHP ");
   lcd.print(amount);
-  
-  lcd.setCursor(1, 2);
-  lcd.print("Volume Equivalent:");
-  lcd.setCursor(5, 3);
-  lcd.print(volume);
+
+  lcd.setCursor(0, 1);
+  lcd.print("Ariel : ");
+  lcd.print(arielVolume);
   lcd.print(" ml");
 }
+
+void downyPaymentConfirmation(int amount) {
+  int downyVolume = (amount / 5) * 18;  // Downy: PHP 5.00 per 18ml
+
+  lcd.clear();
+  lcd.setCursor(2, 0);
+  lcd.print("Total Amount: PHP ");
+  lcd.print(amount);
+
+  lcd.setCursor(0, 1);
+  lcd.print("Downy : ");
+  lcd.print(downyVolume);
+  lcd.print(" ml");
+}
+
+void joyPaymentConfirmation(int amount) {
+  int joyVolume = (amount / 5) * 16;  // Joy: PHP 5.00 per 16ml
+
+  lcd.clear();
+  lcd.setCursor(2, 0);
+  lcd.print("Total Amount: PHP ");
+  lcd.print(amount);
+
+  lcd.setCursor(0, 1);
+  lcd.print("Joy : ");
+  lcd.print(joyVolume);
+  lcd.print(" ml");
+}
+
 
 void productSelection() {
   lcd.clear();
@@ -105,6 +132,42 @@ void productSelection() {
   lcd.print("2. Downy Softener");
   lcd.setCursor(2, 3);
   lcd.print("3. Joy Dishwashing");
+}
+
+void displayChosenProduct(String product) {
+  lcd.clear();
+  lcd.setCursor(2, 0);
+  lcd.print("Selected Product:");
+  lcd.setCursor(4, 1);
+  lcd.print(">> ");
+  lcd.print(product);
+  
+  // Blinking "Enter your Payment." text
+  unsigned long previousMillis = 0; // Stores the last time the text was updated
+  const long blinkInterval = 500;   // Blink interval in milliseconds (500ms = 0.5 seconds)
+  bool textVisible = true;          // Tracks whether the text is currently visible
+
+  while (true) { // Loop to keep the text blinking
+    unsigned long currentMillis = millis(); // Get the current time
+
+    // Check if it's time to toggle the text visibility
+    if (currentMillis - previousMillis >= blinkInterval) {
+      previousMillis = currentMillis; // Save the last time the text was toggled
+
+      if (textVisible) {
+        lcd.setCursor(1, 3); // Move cursor to the position of the text
+        lcd.print("                   "); // Clear the line (assuming 16 characters per line)
+      } else {
+        lcd.setCursor(1, 3);
+        lcd.print("Enter your Payment.");
+      }
+
+      textVisible = !textVisible; // Toggle the visibility state
+    }
+
+    // Add a condition to break out of the loop if needed (e.g., after payment is detected)
+    // For example: if (paymentDetected) break;
+  }
 }
 
 void dispensingProduct(String product) {
@@ -136,7 +199,9 @@ void setup() {
   pinMode(buttPin2, INPUT_PULLUP);
   pinMode(buttPin3, INPUT_PULLUP);
   pinMode(buttPin4, INPUT_PULLUP);
-  pinMode(BUZZER_PIN, OUTPUT);
+  //Universal Coin Selector
+  pinMode(COIN_PIN, INPUT_PULLUP);  // Use internal pull-up or try external 10kΩ
+  attachInterrupt(digitalPinToInterrupt(COIN_PIN), coinISR, RISING);
   //MOSFETS
   pinMode(MOSFET_Ariel, OUTPUT);
   pinMode(MOSFET_Downy, OUTPUT);
@@ -165,7 +230,6 @@ void setup() {
   digitalWrite(RED_JOY, LOW);
   digitalWrite(YELLOW_JOY, LOW);
   digitalWrite(GREEN_JOY, LOW);
-  digitalWrite(BUZZER_PIN, HIGH);
   digitalWrite(MOSFET_Ariel, LOW);
   digitalWrite(MOSFET_Downy, LOW); 
   digitalWrite(MOSFET_Joy, LOW); 
@@ -173,7 +237,84 @@ void setup() {
 }
 
 void loop() {
+  unsigned long currentMillis = millis();
+  int selectButton = 0;
 
+  if (!selectionMade && (currentMillis - lastScreenChange >= 3000)) {
+    lastScreenChange = currentMillis;
+
+    if (showStartScreen) {
+      startScreen();
+    } else {
+      productSelection();
+    }
+    
+    showStartScreen = !showStartScreen;
+  }
+
+  if (digitalRead(buttPin1) == LOW) {
+      Serial.println("Button 1 Pressed!");
+      selectButton = 1;
+  }
+  if (digitalRead(buttPin2) == LOW) {
+      Serial.println("Button 2 Pressed!");
+      selectButton = 2;
+  }
+  if (digitalRead(buttPin3) == LOW) {
+      Serial.println("Button 3 Pressed!");
+      selectButton = 3;
+  }
+  if (digitalRead(buttPin4) == LOW) {
+      Serial.println("Button 4 Pressed!");
+      selectButton = 4;
+  }
+
+
+// Handle product selection
+  if (selectButton > 0 && !selectionMade) {
+    selectionMade = true;
+    lcd.clear();
+    
+    switch (selectButton) {
+      case 1:
+        displayChosenProduct("Ariel");
+        selectedProduct = 1;
+        break;
+      case 2:
+        displayChosenProduct("Downy");
+        selectedProduct = 2;
+        break;
+      case 3:
+        displayChosenProduct("Joy");
+        selectedProduct = 3;
+        break;
+    }
+  }
+
+  // Handle coin insertion
+  if (coinInserted) {
+    coinInserted = false;
+    coinCount++;
+
+    Serial.print("Coin inserted. Total: ");
+    Serial.println(coinCount);
+
+    // Switch to payment confirmation screen
+    paymentScreenActive = true;
+    switch (selectedProduct) {
+      case 1:
+        arielPaymentConfirmation(coinCount);
+        break;
+      case 2:
+        downyPaymentConfirmation(coinCount);
+        break;
+      case 3:
+        joyPaymentConfirmation(coinCount);
+        break;
+    }
+  }
 }
+
+
 
 
