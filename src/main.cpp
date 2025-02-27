@@ -60,6 +60,10 @@ unsigned long selectionTime = 0;
 unsigned long lastBlinkTime = 0;
 bool textVisible = true;
 
+int remainVolumeAriel = 800;
+int remainVolumeDowny = 200; 
+int remainVolumeJoy = 400;
+
 void coinISR() {
   unsigned long interruptTime = millis();
   
@@ -164,6 +168,66 @@ void dispensingProduct(String product) {
   lcd.print(product);
 }
 
+void ArielLEDs(int level) {
+  digitalWrite(RED_ARIEL, LOW);
+  digitalWrite(YELLOW_ARIEL, LOW);
+  digitalWrite(GREEN_ARIEL, LOW);
+
+  switch (level) {
+    case 0: // Low level (Red)
+      digitalWrite(RED_ARIEL, HIGH);
+      break;
+    case 1: // Medium level (Yellow)
+      digitalWrite(YELLOW_ARIEL, HIGH);
+      break;
+    case 2: // High level (Green)
+      digitalWrite(GREEN_ARIEL, HIGH);
+      break;
+    default:
+      break;
+  }
+}
+
+void DownyLEDs(int level) {
+  digitalWrite(RED_DOWNY, LOW);
+  digitalWrite(YELLOW_DOWNY, LOW);
+  digitalWrite(GREEN_DOWNY, LOW);
+
+  switch (level) {
+    case 0: // Low level (Red)
+      digitalWrite(RED_DOWNY, HIGH);
+      break;
+    case 1: // Medium level (Yellow)
+      digitalWrite(YELLOW_DOWNY, HIGH);
+      break;
+    case 2: // High level (Green)
+      digitalWrite(GREEN_DOWNY, HIGH);
+      break;
+    default:
+      break;
+  }
+}
+
+void JoyLEDs(int level) {
+  digitalWrite(RED_JOY, LOW);
+  digitalWrite(YELLOW_JOY, LOW);
+  digitalWrite(GREEN_JOY, LOW);
+
+  switch (level) {
+    case 0: // Low level (Red)
+      digitalWrite(RED_JOY, HIGH);
+      break;
+    case 1: // Medium level (Yellow)
+      digitalWrite(YELLOW_JOY, HIGH);
+      break;
+    case 2: // High level (Green)
+      digitalWrite(GREEN_JOY, HIGH);
+      break;
+    default:
+      break;
+  }
+}
+
 void endScreen() {
   lcd.clear();
   lcd.setCursor(4, 1);
@@ -262,16 +326,41 @@ void loop() {
     lcd.clear();
     
     switch (selectButton) {
-      case 1:
+      case 1: // Ariel selected
         displayChosenProduct("Ariel");
+        if (remainVolumeAriel <= 200) { // Low level (Red)
+          ArielLEDs(0);
+        } else if (remainVolumeAriel <= 500) { // Medium level (Yellow)
+          ArielLEDs(1);
+        } else { // High level (Green)
+          ArielLEDs(2);
+        }
+
         selectedProduct = 1;
         break;
-      case 2:
+
+      case 2: // Downy selected
         displayChosenProduct("Downy");
+        if (remainVolumeDowny <= 200) { // Low level (Red)
+          DownyLEDs(0);
+        } else if (remainVolumeDowny <= 500) { // Medium level (Yellow)
+          DownyLEDs(1);
+        } else { // High level (Green)
+          DownyLEDs(2);
+        }
         selectedProduct = 2;
         break;
-      case 3:
+
+      case 3: // Joy selected
         displayChosenProduct("Joy");
+        if (remainVolumeJoy <= 200) { // Low level (Red)
+          JoyLEDs(0);
+        } else if (remainVolumeJoy <= 500) { // Medium level (Yellow)
+          JoyLEDs(1);
+        } else { // High level (Green)
+          JoyLEDs(2);
+        }
+
         selectedProduct = 3;
         break;
     }
@@ -315,7 +404,7 @@ void loop() {
         break;
     }
   }
-  //   // Reset after payment is completed (optional)
+  //   // Reset after payment is completed
   // if (paymentScreenActive && coinCount >= requiredCoins) {
   //   // Reset for the next transaction
   //   selectionMade = false;
