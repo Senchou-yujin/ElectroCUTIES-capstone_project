@@ -37,6 +37,16 @@
 //Joy
 #define TRIGGER_JOY 31
 #define ECHO_JOY 33
+// Ultrasonic Sensor for Stock Verification
+// Stock Sensor for Ariel
+#define TRIGGER_STOCK_Ariel 35
+#define ECHO_STOCK_Ariel 37
+// Stock Sensor for Downy
+#define TRIGGER_STOCK_Downy 39
+#define ECHO_STOCK_Downy 41
+// Stock Sensor for Joy
+#define TRIGGER_STOCK_Joy 43
+#define ECHO_STOCK_Joy 45
 
 // Maximum distance we want to ping for (in centimeters).
 #define MAX_DISTANCE 15	
