@@ -8,7 +8,8 @@
 #define buttPin2 24   // Pin for Button 2
 #define buttPin3 26   // Pin for Button 3
 #define buttPin4 28   // Pin for Button 4
-#define BUZZER_PIN 30 // Pin for Buzzer Module
+#define BUZZER_PIN 53 // Pin for Buzzer Module
+#define Relay_PIN 7 // Pin for the Coin Slot Auto Shutdown
 //Universal Coin Selector
 #define COIN_PIN 2  // Coin acceptor signal pin
 //Mosfet Module
@@ -16,17 +17,17 @@
 #define MOSFET_Downy 4  // Pump for Downy
 #define MOSFET_Joy 5  // Pump for Joy
 // Ariel Liquid Detergent Indicator LED
-#define RED_ARIEL 32
-#define YELLOW_ARIEL 34
-#define GREEN_ARIEL 36
+#define RED_ARIEL 30
+#define YELLOW_ARIEL 32
+#define GREEN_ARIEL 34
 // Downy Fabric Softener Indicator LED
-#define RED_DOWNY 38
-#define YELLOW_DOWNY 40
-#define GREEN_DOWNY 42
+#define RED_DOWNY 36
+#define YELLOW_DOWNY 38
+#define GREEN_DOWNY 40
 // Joy Dishwashing Liquid Indicator LED
-#define RED_JOY 44
-#define YELLOW_JOY 46
-#define GREEN_JOY 48
+#define RED_JOY 42
+#define YELLOW_JOY 44
+#define GREEN_JOY 46
 //Ultrasonic Sensor for customer verification
 //Ariel
 #define TRIGGER_ARIEL 23
@@ -86,6 +87,45 @@ void coinISR() {
   lastInterruptTime = interruptTime;
 }
 
+#define RESTART_BUTTON 4 // Pin for Button 4
+
+void rebootProgram() {
+  unsigned long startTime = millis();
+
+  while (digitalRead(RESTART_BUTTON) == LOW) { 
+    if (millis() - startTime >= 4000) {
+      Serial.println("Restarting System...");
+      lcd.clear();
+      lcd.setCursor(5, 1);
+      lcd.print("Restarting...");
+
+      delay(1000);
+      asm volatile("jmp 0");
+    }
+  }
+}
+
+
+void beep() {
+  digitalWrite(BUZZER_PIN, HIGH);
+  delay(100);  // Beep duration (adjust as needed)
+  digitalWrite(BUZZER_PIN, LOW);
+}
+
+void beeptwice() {
+  beep();  
+  delay(200);  // Pause between beeps
+  beep();
+}
+
+void CoinSlotOFF() {
+    digitalWrite(Relay_PIN, LOW); // Activate relay (disable coin slot)
+}
+
+void CoinSlotON() {
+    digitalWrite(Relay_PIN, HIGH); // Deactivate relay (enable coin slot)
+}
+
 void startScreen() {
   lcd.clear();
   lcd.setCursor(6, 1);
@@ -93,7 +133,6 @@ void startScreen() {
   lcd.setCursor(0, 2);
   lcd.print("Select Your Product.");
 }
-
 
 void arielPaymentConfirmation(int amount) {
   int arielVolume = (amount / 5) * 20 + (amount % 5) * 4;  // Ariel: PHP 5.00 per 20ml
@@ -259,6 +298,8 @@ void setup() {
   pinMode(buttPin2, INPUT_PULLUP);
   pinMode(buttPin3, INPUT_PULLUP);
   pinMode(buttPin4, INPUT_PULLUP);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(Relay_PIN, OUTPUT);
   //Universal Coin Selector
   pinMode(COIN_PIN, INPUT_PULLUP);  // Use internal pull-up or try external 10kΩ
   attachInterrupt(digitalPinToInterrupt(COIN_PIN), coinISR, RISING);
@@ -292,8 +333,9 @@ void setup() {
   digitalWrite(GREEN_JOY, LOW);
   digitalWrite(MOSFET_Ariel, LOW);
   digitalWrite(MOSFET_Downy, LOW); 
-  digitalWrite(MOSFET_Joy, LOW); 
-  
+  digitalWrite(MOSFET_Joy, LOW);
+  digitalWrite(BUZZER_PIN, LOW);
+  digitalWrite(Relay_PIN, LOW);
 }
 
 void loop() {
@@ -337,7 +379,10 @@ void loop() {
     
     switch (selectButton) {
       case 1: // Ariel selected
+        rebootProgram();
         displayChosenProduct("Ariel");
+        beep();
+        delay(1000);
         if (remainVolumeAriel <= 200) { // Low level (Red)
           ArielLEDs(0);
         } else if (remainVolumeAriel <= 500) { // Medium level (Yellow)
@@ -346,7 +391,7 @@ void loop() {
           ArielLEDs(2);
         }
         lcd.setCursor(1, 2);
-        lcd.print("Avail: ");
+        lcd.print("Stock: ");
         lcd.print(remainVolumeAriel);
         lcd.print(" mL");
 
@@ -354,7 +399,10 @@ void loop() {
         break;
 
       case 2: // Downy selected
+        rebootProgram();
         displayChosenProduct("Downy");
+        beep();
+        delay(1000);
         if (remainVolumeDowny <= 200) { // Low level (Red)
           DownyLEDs(0);
         } else if (remainVolumeDowny <= 500) { // Medium level (Yellow)
@@ -363,7 +411,7 @@ void loop() {
           DownyLEDs(2);
         }
         lcd.setCursor(1, 2);
-        lcd.print("Avail: ");
+        lcd.print("Stock: ");
         lcd.print(remainVolumeDowny);
         lcd.print(" mL");
 
@@ -371,7 +419,10 @@ void loop() {
         break;
 
       case 3: // Joy selected
+        rebootProgram();
         displayChosenProduct("Joy");
+        beep();
+        delay(1000);
         if (remainVolumeJoy <= 200) { // Low level (Red)
           JoyLEDs(0);
         } else if (remainVolumeJoy <= 500) { // Medium level (Yellow)
@@ -380,7 +431,7 @@ void loop() {
           JoyLEDs(2);
         }
         lcd.setCursor(1, 2);
-        lcd.print("Avail: ");
+        lcd.print("Stock: ");
         lcd.print(remainVolumeJoy);
         lcd.print(" mL");
         selectedProduct = 3;
@@ -420,11 +471,12 @@ if (selectionMade && !paymentScreenActive) {
       if (textVisible) {
         lcd.print("Insufficient Stock");
       } else {
-        lcd.print("                   ");
+        lcd.print("HOLD DONE = RESTART    ");
       }
     } else {
       if (textVisible) {
         lcd.print("Enter your Payment.");
+        CoinSlotON();
       } else {
         lcd.print("                   ");
       }
