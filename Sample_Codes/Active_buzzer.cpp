@@ -1,6 +1,6 @@
 #include <Arduino.h>
 
-#define BUZZER_PIN 30  // This pin controls the transistor
+#define BUZZER_PIN 53  // This pin controls the transistor
 
 void setup() {
     pinMode(BUZZER_PIN, OUTPUT);
