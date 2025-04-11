@@ -258,81 +258,6 @@ void JoyLEDs(int level) {
   }
 }
 
-
-bool isContainerDetected(int productID) {
-  int distance = 0;
-
-  // Read distance from the appropriate ultrasonic sensor
-  switch (productID) {
-    case 1: // Ariel
-      distance = ariel.ping_cm();
-      break;
-    case 2: // Downy
-      distance = downy.ping_cm();
-      break;
-    case 3: // Joy
-      distance = joy.ping_cm();
-      break;
-    default:
-      return false; // Invalid product
-  }
-
-  // Check if the distance is within the acceptable range (e.g., 5-15 cm)
-  return (distance > 0 && distance <= MAX_DISTANCE);
-}
-
-void dispensingProduct(String product, int productID, int dispensingTime) {
-  // Display "Dispensing..." message
-  lcd.clear();
-  lcd.setCursor(4, 1);
-  lcd.print("Dispensing...");
-  lcd.setCursor(6, 2);
-  lcd.print(product);
-
-  // Wait until the container is detected
-  lcd.clear();
-  lcd.setCursor(0, 1);
-  lcd.print("Place container...");
-  while (!isContainerDetected(productID)) {
-    delay(500); // Check every 500 ms
-  }
-
-  // Activate the corresponding MOSFET
-  switch (productID) {
-    case 1: // Ariel
-      digitalWrite(MOSFET_Ariel, HIGH);
-      break;
-    case 2: // Downy
-      digitalWrite(MOSFET_Downy, HIGH);
-      break;
-    case 3: // Joy
-      digitalWrite(MOSFET_Joy, HIGH);
-      break;
-  }
-
-  // Dispense for the calculated time
-  delay(dispensingTime);
-
-  // Deactivate the MOSFET
-  switch (productID) {
-    case 1: // Ariel
-      digitalWrite(MOSFET_Ariel, LOW);
-      break;
-    case 2: // Downy
-      digitalWrite(MOSFET_Downy, LOW);
-      break;
-    case 3: // Joy
-      digitalWrite(MOSFET_Joy, LOW);
-      break;
-  }
-
-  // Display dispensing complete message
-  lcd.clear();
-  lcd.setCursor(4, 1);
-  lcd.print("Dispensing Done!");
-  delay(2000); // Show message for 2 seconds
-}
-
 void endScreen() {
   lcd.clear();
   lcd.setCursor(4, 1);
@@ -398,7 +323,6 @@ void loop() {
   unsigned long currentMillis = millis();
   int selectButton = 0;
 
-  // Handle alternating screens (start screen and product selection)
   if (!selectionMade && (currentMillis - lastScreenChange >= 3000)) {
     lastScreenChange = currentMillis;
 
@@ -411,7 +335,6 @@ void loop() {
     showStartScreen = !showStartScreen;
   }
 
-  // Check for button presses
   if (digitalRead(buttPin1) == LOW) {
       Serial.println("Button 1 Pressed!");
       selectButton = 1;
@@ -429,7 +352,8 @@ void loop() {
       selectButton = 4;
   }
 
-  // Handle product selection
+
+// Handle product selection
   if (selectButton > 0 && !selectionMade) {
     selectionMade = true;
     lcd.clear();
@@ -493,6 +417,50 @@ void loop() {
     }
   }
 
+if (selectionMade && !paymentScreenActive) {
+  CoinSlotON();
+  if (currentMillis - lastBlinkTime >= 1000) {
+    lastBlinkTime = currentMillis;
+    textVisible = !textVisible;
+
+    // Check if the selected product is out of stock
+    bool isOutOfStock = false;
+    switch (selectedProduct) {
+      case 1: // Ariel
+        if (remainVolumeAriel <= 200) { // Red LED threshold for Ariel
+          isOutOfStock = true;
+        }
+        break;
+      case 2: // Downy
+        if (remainVolumeDowny <= 150) { // Red LED threshold for Downy
+          isOutOfStock = true;
+        }
+        break;
+      case 3: // Joy
+        if (remainVolumeJoy <= 100) { // Red LED threshold for Joy
+          isOutOfStock = true;
+        }
+        break;
+    }
+
+    // Display the appropriate message
+    lcd.setCursor(1, 3);
+    if (isOutOfStock) {
+      if (textVisible) {
+        lcd.print("Insufficient Stock");
+      } else {
+        lcd.print("PRESS RESTART     ");
+      }
+    } else {
+      if (textVisible) {
+        lcd.print("Enter your Payment.");
+      } else {
+        lcd.print("                   ");
+      }
+    }
+  }
+}
+
   // Handle coin insertion
   if (coinInserted) {
     coinInserted = false;
@@ -515,43 +483,16 @@ void loop() {
         break;
     }
   }
-
-  // Wait for Button 4 to start dispensing
-  if (paymentScreenActive && digitalRead(buttPin4) == LOW) {
-    // Ensure the required amount is reached before dispensing
-    int requiredCoins = 5; // Example: PHP 5.00 minimum for all products
-    if (coinCount >= requiredCoins) {
-      // Calculate dispensing time based on the amount paid
-      int dispensingTime = 0;
-      switch (selectedProduct) {
-        case 1: // Ariel
-          dispensingTime = (coinCount / 5) * 20 * 1000 / (100.0 / 60.0); // 100 mL/min
-          break;
-        case 2: // Downy
-          dispensingTime = (coinCount / 5) * 18 * 1000 / (90.0 / 60.0); // 90 mL/min
-          break;
-        case 3: // Joy
-          dispensingTime = (coinCount / 5) * 16 * 1000 / (80.0 / 60.0); // 80 mL/min
-          break;
-      }
-
-      // Dispense the product
-      dispensingProduct(selectedProduct == 1 ? "Ariel" : selectedProduct == 2 ? "Downy" : "Joy", selectedProduct, dispensingTime);
-
-      // Show end screen
-      endScreen();
-
-      // Reset for the next transaction
-      selectionMade = false;
-      paymentScreenActive = false;
-      coinCount = 0;
-      selectedProduct = 0;
-    } else {
-      // Display a message if the required amount is not reached
-      lcd.clear();
-      lcd.setCursor(0, 1);
-      lcd.print("Insufficient Payment");
-      delay(2000);
-    }
-  }
+  //   // Reset after payment is completed
+  // if (paymentScreenActive && coinCount >= requiredCoins) {
+  //   // Reset for the next transaction
+  //   selectionMade = false;
+  //   paymentScreenActive = false;
+  //   coinCount = 0;
+  //   selectedProduct = "";
+  // }
 }
+
+
+
+
