@@ -74,6 +74,7 @@ bool textVisible = true;
 int remainVolumeAriel = 1000;
 int remainVolumeDowny = 1000; 
 int remainVolumeJoy = 1000;
+int totalVolume = 0;
 
 void coinISR() {
   unsigned long interruptTime = millis();
@@ -115,7 +116,7 @@ void startScreen() {
   lcd.print("Select Your Product.");
 }
 
-void arielPaymentConfirmation(int amount) {
+int arielPaymentConfirmation(int amount) {
   int arielVolume = (amount / 5) * 20 + (amount % 5) * 4;  // Ariel: PHP 5.00 per 20ml
 
   lcd.clear();
@@ -130,14 +131,16 @@ void arielPaymentConfirmation(int amount) {
 
   lcd.setCursor(0, 3);
   lcd.print("##PRESS DONE##");
+
+  return arielVolume;  // Return the calculated volume
 }
 
-void downyPaymentConfirmation(int amount) {
+int downyPaymentConfirmation(int amount) {
   int downyVolume = (amount / 5) * 18 + (amount % 5) * 3.6;  // Downy: PHP 5.00 per 18ml
 
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Total Amount: ");
+  lcd.print("Total Amount: PHP ");
   lcd.print(amount);
 
   lcd.setCursor(0, 1);
@@ -147,9 +150,11 @@ void downyPaymentConfirmation(int amount) {
 
   lcd.setCursor(0, 3);
   lcd.print("##PRESS DONE##");
+
+  return downyVolume;  // Return the calculated volume
 }
 
-void joyPaymentConfirmation(int amount) {
+int joyPaymentConfirmation(int amount) {
   int joyVolume = (amount / 5) * 16 + (amount % 5) * 3.2;  // Joy: PHP 5.00 per 16ml
 
   lcd.clear();
@@ -164,6 +169,8 @@ void joyPaymentConfirmation(int amount) {
 
   lcd.setCursor(0, 3);
   lcd.print("##PRESS DONE##");
+
+  return joyVolume;  // Return the calculated volume
 }
 
 
@@ -282,51 +289,64 @@ bool isContainerDetected(int productID) {
 }
 
 void dispensingProduct(String product, int productID, int dispensingTime) {
-  // Display "Dispensing..." message
-  lcd.clear();
-  lcd.setCursor(4, 1);
-  lcd.print("Dispensing...");
-  lcd.setCursor(6, 2);
-  lcd.print(product);
-
-  // Wait until the container is detected
+  // Step 1: Prompt the user to place the container
   lcd.clear();
   lcd.setCursor(0, 1);
   lcd.print("Place container...");
   while (!isContainerDetected(productID)) {
-    delay(500); // Check every 500 ms
+      delay(500); // Check every 500 ms
   }
 
-  // Activate the corresponding MOSFET
+  // Step 2: Display "Dispensing..." message
+  lcd.clear();
+  lcd.setCursor(4, 0);
+  lcd.print("Dispensing...");
+  lcd.setCursor(6, 1);
+  lcd.print(product);
+
+  // Step 3: Display a loading bar based on dispensing time
+  lcd.setCursor(0, 3);
+  lcd.print("[                    ]"); // Empty loading bar
+
+  int totalSteps = 20; // Number of segments in the loading bar
+  int stepDelay = dispensingTime / totalSteps; // Time per segment
+
+  for (int i = 0; i < totalSteps; i++) {
+      lcd.setCursor(1 + i, 3); // Update the loading bar
+      lcd.print("|");
+      delay(stepDelay); // Wait for the step duration
+  }
+
+  // Step 4: Activate the corresponding MOSFET to start dispensing
   switch (productID) {
-    case 1: // Ariel
-      digitalWrite(MOSFET_Ariel, HIGH);
-      break;
-    case 2: // Downy
-      digitalWrite(MOSFET_Downy, HIGH);
-      break;
-    case 3: // Joy
-      digitalWrite(MOSFET_Joy, HIGH);
-      break;
+      case 1: // Ariel
+          digitalWrite(MOSFET_Ariel, HIGH);
+          break;
+      case 2: // Downy
+          digitalWrite(MOSFET_Downy, HIGH);
+          break;
+      case 3: // Joy
+          digitalWrite(MOSFET_Joy, HIGH);
+          break;
   }
 
-  // Dispense for the calculated time
+  // Step 5: Dispense for the calculated time
   delay(dispensingTime);
 
-  // Deactivate the MOSFET
+  // Step 6: Deactivate the MOSFET
   switch (productID) {
-    case 1: // Ariel
-      digitalWrite(MOSFET_Ariel, LOW);
-      break;
-    case 2: // Downy
-      digitalWrite(MOSFET_Downy, LOW);
-      break;
-    case 3: // Joy
-      digitalWrite(MOSFET_Joy, LOW);
-      break;
+      case 1: // Ariel
+          digitalWrite(MOSFET_Ariel, LOW);
+          break;
+      case 2: // Downy
+          digitalWrite(MOSFET_Downy, LOW);
+          break;
+      case 3: // Joy
+          digitalWrite(MOSFET_Joy, LOW);
+          break;
   }
 
-  // Display dispensing complete message
+  // Step 7: Display "Dispensing Done!" message
   lcd.clear();
   lcd.setCursor(4, 1);
   lcd.print("Dispensing Done!");
@@ -376,8 +396,7 @@ void setup() {
   pinMode(RED_JOY, OUTPUT);
   pinMode(YELLOW_JOY, OUTPUT);
   pinMode(GREEN_JOY, OUTPUT);
-
-  // Ensure all components are OFF initially
+  // All Hardware is off
   digitalWrite(RED_ARIEL, LOW);
   digitalWrite(YELLOW_ARIEL, LOW);
   digitalWrite(GREEN_ARIEL, LOW);
@@ -504,54 +523,61 @@ void loop() {
     // Switch to payment confirmation screen
     paymentScreenActive = true;
     switch (selectedProduct) {
-      case 1:
-        arielPaymentConfirmation(coinCount);
-        break;
-      case 2:
-        downyPaymentConfirmation(coinCount);
-        break;
-      case 3:
-        joyPaymentConfirmation(coinCount);
-        break;
+        case 1: // Ariel
+            totalVolume = arielPaymentConfirmation(coinCount);
+            break;
+        case 2: // Downy
+            totalVolume = downyPaymentConfirmation(coinCount);
+            break;
+        case 3: // Joy
+            totalVolume = joyPaymentConfirmation(coinCount);
+            break;
     }
+
+    Serial.print("Total Volume: ");
+    Serial.println(totalVolume);  // Debug: Print the calculated volume
   }
 
-  // Wait for Button 4 to start dispensing
+    // Wait for Button 4/DONE to start dispensing
   if (paymentScreenActive && digitalRead(buttPin4) == LOW) {
     // Ensure the required amount is reached before dispensing
     int requiredCoins = 5; // Example: PHP 5.00 minimum for all products
     if (coinCount >= requiredCoins) {
-      // Calculate dispensing time based on the amount paid
-      int dispensingTime = 0;
-      switch (selectedProduct) {
-        case 1: // Ariel
-          dispensingTime = (coinCount / 5) * 20 * 1000 / (100.0 / 60.0); // 100 mL/min
-          break;
-        case 2: // Downy
-          dispensingTime = (coinCount / 5) * 18 * 1000 / (90.0 / 60.0); // 90 mL/min
-          break;
-        case 3: // Joy
-          dispensingTime = (coinCount / 5) * 16 * 1000 / (80.0 / 60.0); // 80 mL/min
-          break;
-      }
+        // Calculate dispensing time based on the total volume
+        int dispensingTime = 0;
 
-      // Dispense the product
-      dispensingProduct(selectedProduct == 1 ? "Ariel" : selectedProduct == 2 ? "Downy" : "Joy", selectedProduct, dispensingTime);
+        switch (selectedProduct) {
+            case 1: // Ariel
+                dispensingTime = (totalVolume * 1000) / (100.0 / 37.0); // 100 mL/min
+                break;
+            case 2: // Downy
+                dispensingTime = (totalVolume * 1000) / (90.0 / 60.0); // 90 mL/min
+                break;
+            case 3: // Joy
+                dispensingTime = (totalVolume * 1000) / (80.0 / 37.0); // 80 mL/min
+                break;
+        }
 
-      // Show end screen
-      endScreen();
+        // Dispense the product
+        dispensingProduct(selectedProduct == 1 ? "Ariel" : selectedProduct == 2 ? "Downy" : "Joy", selectedProduct, dispensingTime);
 
-      // Reset for the next transaction
-      selectionMade = false;
-      paymentScreenActive = false;
-      coinCount = 0;
-      selectedProduct = 0;
+        // Show end screen
+        endScreen();
+
+        // Reset for the next transaction
+        selectionMade = false;
+        paymentScreenActive = false;
+        coinCount = 0;
+        selectedProduct = 0;
+        totalVolume = 0; // Reset total volume
     } else {
-      // Display a message if the required amount is not reached
-      lcd.clear();
-      lcd.setCursor(0, 1);
-      lcd.print("Insufficient Payment");
-      delay(2000);
+        // Display a message if the required amount is not reached
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Insufficient Payment");
+        lcd.setCursor(0, 1);
+        lcd.print("Min: PHP 5.00 Required");
+        delay(3000); // Show the message for 3 seconds
     }
   }
 }
