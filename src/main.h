@@ -21,13 +21,13 @@
 #define YELLOW_ARIEL 32
 #define GREEN_ARIEL 34
 // Downy Fabric Softener Indicator LED
-#define RED_DOWNY 36
+#define RED_DOWNY 40
 #define YELLOW_DOWNY 38
-#define GREEN_DOWNY 40
+#define GREEN_DOWNY 36
 // Joy Dishwashing Liquid Indicator LED
-#define RED_JOY 42
+#define RED_JOY 46
 #define YELLOW_JOY 44
-#define GREEN_JOY 46
+#define GREEN_JOY 42
 //Ultrasonic Sensor for customer verification
 //Ariel
 #define TRIGGER_ARIEL 23
@@ -70,10 +70,13 @@ int selectedProduct = 0;
 unsigned long selectionTime = 0;
 unsigned long lastBlinkTime = 0;
 bool textVisible = true;
+unsigned long button4PressStart = 0; // To track when Button 4 is pressed
+bool button4Held = false;           // To track if Button 4 is being held
 
-int remainVolumeAriel = 1000;
-int remainVolumeDowny = 1000; 
-int remainVolumeJoy = 1000;
+int remainVolumeAriel = 3000;
+int remainVolumeDowny = 3000; 
+int remainVolumeJoy = 3000;
+int totalVolume = 0;
 
 void coinISR() {
   unsigned long interruptTime = millis();
@@ -115,7 +118,7 @@ void startScreen() {
   lcd.print("Select Your Product.");
 }
 
-void arielPaymentConfirmation(int amount) {
+int arielPaymentConfirmation(int amount) {
   int arielVolume = (amount / 5) * 20 + (amount % 5) * 4;  // Ariel: PHP 5.00 per 20ml
 
   lcd.clear();
@@ -130,14 +133,16 @@ void arielPaymentConfirmation(int amount) {
 
   lcd.setCursor(0, 3);
   lcd.print("##PRESS DONE##");
+
+  return arielVolume;  // Return the calculated volume
 }
 
-void downyPaymentConfirmation(int amount) {
+int downyPaymentConfirmation(int amount) {
   int downyVolume = (amount / 5) * 18 + (amount % 5) * 3.6;  // Downy: PHP 5.00 per 18ml
 
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Total Amount: ");
+  lcd.print("Total Amount: PHP ");
   lcd.print(amount);
 
   lcd.setCursor(0, 1);
@@ -147,9 +152,11 @@ void downyPaymentConfirmation(int amount) {
 
   lcd.setCursor(0, 3);
   lcd.print("##PRESS DONE##");
+
+  return downyVolume;  // Return the calculated volume
 }
 
-void joyPaymentConfirmation(int amount) {
+int joyPaymentConfirmation(int amount) {
   int joyVolume = (amount / 5) * 16 + (amount % 5) * 3.2;  // Joy: PHP 5.00 per 16ml
 
   lcd.clear();
@@ -164,6 +171,8 @@ void joyPaymentConfirmation(int amount) {
 
   lcd.setCursor(0, 3);
   lcd.print("##PRESS DONE##");
+
+  return joyVolume;  // Return the calculated volume
 }
 
 
@@ -258,6 +267,94 @@ void JoyLEDs(int level) {
   }
 }
 
+
+bool isContainerDetected(int productID) {
+  int distance = 0;
+
+  // Read distance from the appropriate ultrasonic sensor
+  switch (productID) {
+    case 1: // Ariel
+      distance = ariel.ping_cm();
+      break;
+    case 2: // Downy
+      distance = downy.ping_cm();
+      break;
+    case 3: // Joy
+      distance = joy.ping_cm();
+      break;
+    default:
+      return false; // Invalid product
+  }
+
+  // Check if the distance is within the acceptable range (e.g., 5-15 cm)
+  return (distance > 0 && distance <= MAX_DISTANCE);
+}
+
+void dispensingProduct(String product, int productID, int dispensingTime) {
+  // Step 1: Prompt the user to place the container
+  lcd.clear();
+  lcd.setCursor(0, 1);
+  lcd.print("Place container...");
+  while (!isContainerDetected(productID)) {
+      delay(500); // Check every 500 ms
+  }
+
+  // Step 2: Display "Dispensing..." message
+  lcd.clear();
+  lcd.setCursor(4, 0);
+  lcd.print("Dispensing...");
+  lcd.setCursor(6, 1);
+  lcd.print(product);
+
+  // Step 3: Display a loading bar based on dispensing time
+  lcd.setCursor(0, 3);
+  lcd.print("[                    ]"); // Empty loading bar
+
+  int totalSteps = 20; // Number of segments in the loading bar
+  int stepDelay = dispensingTime / totalSteps; // Time per segment
+
+  for (int i = 0; i < totalSteps; i++) {
+      lcd.setCursor(1 + i, 3); // Update the loading bar
+      lcd.print("|");
+      delay(stepDelay); // Wait for the step duration
+  }
+
+  // Step 4: Activate the corresponding MOSFET to start dispensing
+  switch (productID) {
+      case 1: // Ariel
+          digitalWrite(MOSFET_Ariel, HIGH);
+          break;
+      case 2: // Downy
+          digitalWrite(MOSFET_Downy, HIGH);
+          break;
+      case 3: // Joy
+          digitalWrite(MOSFET_Joy, HIGH);
+          break;
+  }
+
+  // Step 5: Dispense for the calculated time
+  delay(dispensingTime);
+
+  // Step 6: Deactivate the MOSFET
+  switch (productID) {
+      case 1: // Ariel
+          digitalWrite(MOSFET_Ariel, LOW);
+          break;
+      case 2: // Downy
+          digitalWrite(MOSFET_Downy, LOW);
+          break;
+      case 3: // Joy
+          digitalWrite(MOSFET_Joy, LOW);
+          break;
+  }
+
+  // Step 7: Display "Dispensing Done!" message
+  lcd.clear();
+  lcd.setCursor(4, 1);
+  lcd.print("Dispensing Done!");
+  delay(2000); // Show message for 2 seconds
+}
+
 void endScreen() {
   lcd.clear();
   lcd.setCursor(4, 1);
@@ -301,8 +398,7 @@ void setup() {
   pinMode(RED_JOY, OUTPUT);
   pinMode(YELLOW_JOY, OUTPUT);
   pinMode(GREEN_JOY, OUTPUT);
-
-  // Ensure all components are OFF initially
+  // All Hardware is off
   digitalWrite(RED_ARIEL, LOW);
   digitalWrite(YELLOW_ARIEL, LOW);
   digitalWrite(GREEN_ARIEL, LOW);
@@ -323,6 +419,7 @@ void loop() {
   unsigned long currentMillis = millis();
   int selectButton = 0;
 
+  // Handle alternating screens (start screen and product selection)
   if (!selectionMade && (currentMillis - lastScreenChange >= 3000)) {
     lastScreenChange = currentMillis;
 
@@ -335,37 +432,73 @@ void loop() {
     showStartScreen = !showStartScreen;
   }
 
+  // Check for button presses
   if (digitalRead(buttPin1) == LOW) {
       Serial.println("Button 1 Pressed!");
       selectButton = 1;
+      beep();
   }
   if (digitalRead(buttPin2) == LOW) {
       Serial.println("Button 2 Pressed!");
       selectButton = 2;
+      beep();
   }
   if (digitalRead(buttPin3) == LOW) {
       Serial.println("Button 3 Pressed!");
       selectButton = 3;
+      beep();
   }
-  if (digitalRead(buttPin4) == LOW) {
-      Serial.println("Button 4 Pressed!");
-      selectButton = 4;
+    if (digitalRead(buttPin4) == LOW) {
+      if (button4PressStart == 0) {
+          button4PressStart = currentMillis; 
+      } else if (currentMillis - button4PressStart >= 2000 && !button4Held) {
+          button4Held = true;
+          Serial.println("Restarting Arduino...");
+          asm volatile ("jmp 0");
+      }
+  } else {
+      button4PressStart = 0; 
+      button4Held = false; 
   }
-
-
-// Handle product selection
+  // OUT OF STOCK LEDS
   if (selectButton > 0 && !selectionMade) {
     selectionMade = true;
     lcd.clear();
-    
+
     switch (selectButton) {
       case 1: // Ariel selected
+        if (remainVolumeAriel <= 200) { // Low level (Out of Stock)
+          ArielLEDs(0);
+          lcd.clear();
+          lcd.setCursor(0, 1);
+          lcd.print("Ariel Out of Stock!");
+          lcd.setCursor(0, 2);
+          lcd.print("Hold DONE to Restart");
+          delay(1000);
+          beep();
+          delay(500);
+          beep();
+          delay(500);
+          beep();
+          delay(500);
+          while (true) {
+            // Wait for Button 4 (DONE) to be held for 3 seconds
+            if (digitalRead(buttPin4) == LOW) {
+              if (button4PressStart == 0) {
+                button4PressStart = millis(); // Start timing
+              } else if (millis() - button4PressStart >= 3000) {
+                Serial.println("Restarting Arduino...");
+                asm volatile ("jmp 0"); // Restart Arduino
+              }
+            } else {
+              button4PressStart = 0; // Reset the timer if Button 4 is released
+            }
+          }
+        }
         displayChosenProduct("Ariel");
         beep();
         delay(1000);
-        if (remainVolumeAriel <= 200) { // Low level (Red)
-          ArielLEDs(0);
-        } else if (remainVolumeAriel <= 500) { // Medium level (Yellow)
+        if (remainVolumeAriel <= 500) { // Medium level (Yellow)
           ArielLEDs(1);
         } else { // High level (Green)
           ArielLEDs(2);
@@ -379,12 +512,38 @@ void loop() {
         break;
 
       case 2: // Downy selected
+        if (remainVolumeDowny <= 200) { // Low level (Out of Stock)
+          DownyLEDs(0);
+          lcd.clear();
+          lcd.setCursor(0, 1);
+          lcd.print("Downy Out of Stock!");
+          lcd.setCursor(0, 2);
+          lcd.print("Hold DONE to Restart");
+          delay(1000);
+          beep();
+          delay(500);
+          beep();
+          delay(500);
+          beep();
+          delay(500);
+          while (true) {
+            // Wait for Button 4 (DONE) to be held for 3 seconds
+            if (digitalRead(buttPin4) == LOW) {
+              if (button4PressStart == 0) {
+                button4PressStart = millis(); // Start timing
+              } else if (millis() - button4PressStart >= 3000) {
+                Serial.println("Restarting Arduino...");
+                asm volatile ("jmp 0"); // Restart Arduino
+              }
+            } else {
+              button4PressStart = 0; // Reset the timer if Button 4 is released
+            }
+          }
+        }
         displayChosenProduct("Downy");
         beep();
         delay(1000);
-        if (remainVolumeDowny <= 200) { // Low level (Red)
-          DownyLEDs(0);
-        } else if (remainVolumeDowny <= 500) { // Medium level (Yellow)
+        if (remainVolumeDowny <= 500) { // Medium level (Yellow)
           DownyLEDs(1);
         } else { // High level (Green)
           DownyLEDs(2);
@@ -398,12 +557,38 @@ void loop() {
         break;
 
       case 3: // Joy selected
+        if (remainVolumeJoy <= 200) { // Low level (Out of Stock)
+          JoyLEDs(2);
+          lcd.clear();
+          lcd.setCursor(0, 1);
+          lcd.print("Joy Out of Stock!");
+          lcd.setCursor(0, 2);
+          lcd.print("Hold DONE to Restart");
+          delay(1000);
+          beep();
+          delay(500);
+          beep();
+          delay(500);
+          beep();
+          delay(500);
+          while (true) {
+            // Wait for Button 4 (DONE) to be held for 3 seconds
+            if (digitalRead(buttPin4) == LOW) {
+              if (button4PressStart == 0) {
+                button4PressStart = millis(); // Start timing
+              } else if (millis() - button4PressStart >= 3000) {
+                Serial.println("Restarting Arduino...");
+                asm volatile ("jmp 0"); // Restart Arduino
+              }
+            } else {
+              button4PressStart = 0; // Reset the timer if Button 4 is released
+            }
+          }
+        }
         displayChosenProduct("Joy");
         beep();
         delay(1000);
-        if (remainVolumeJoy <= 200) { // Low level (Red)
-          JoyLEDs(0);
-        } else if (remainVolumeJoy <= 500) { // Medium level (Yellow)
+        if (remainVolumeJoy <= 500) { // Medium level (Yellow)
           JoyLEDs(1);
         } else { // High level (Green)
           JoyLEDs(2);
@@ -412,53 +597,10 @@ void loop() {
         lcd.print("Stock: ");
         lcd.print(remainVolumeJoy);
         lcd.print(" mL");
+
         selectedProduct = 3;
         break;
     }
-  }
-
-if (selectionMade && !paymentScreenActive) {
-  CoinSlotON();
-  if (currentMillis - lastBlinkTime >= 1000) {
-    lastBlinkTime = currentMillis;
-    textVisible = !textVisible;
-
-    // Check if the selected product is out of stock
-    bool isOutOfStock = false;
-    switch (selectedProduct) {
-      case 1: // Ariel
-        if (remainVolumeAriel <= 200) { // Red LED threshold for Ariel
-          isOutOfStock = true;
-        }
-        break;
-      case 2: // Downy
-        if (remainVolumeDowny <= 150) { // Red LED threshold for Downy
-          isOutOfStock = true;
-        }
-        break;
-      case 3: // Joy
-        if (remainVolumeJoy <= 100) { // Red LED threshold for Joy
-          isOutOfStock = true;
-        }
-        break;
-    }
-
-    // Display the appropriate message
-    lcd.setCursor(1, 3);
-    if (isOutOfStock) {
-      if (textVisible) {
-        lcd.print("Insufficient Stock");
-      } else {
-        lcd.print("PRESS RESTART     ");
-      }
-    } else {
-      if (textVisible) {
-        lcd.print("Enter your Payment.");
-      } else {
-        lcd.print("                   ");
-      }
-    }
-  }
 }
 
   // Handle coin insertion
@@ -472,27 +614,61 @@ if (selectionMade && !paymentScreenActive) {
     // Switch to payment confirmation screen
     paymentScreenActive = true;
     switch (selectedProduct) {
-      case 1:
-        arielPaymentConfirmation(coinCount);
-        break;
-      case 2:
-        downyPaymentConfirmation(coinCount);
-        break;
-      case 3:
-        joyPaymentConfirmation(coinCount);
-        break;
+        case 1: // Ariel
+            totalVolume = arielPaymentConfirmation(coinCount);
+            break;
+        case 2: // Downy
+            totalVolume = downyPaymentConfirmation(coinCount);
+            break;
+        case 3: // Joy
+            totalVolume = joyPaymentConfirmation(coinCount);
+            break;
+    }
+
+    Serial.print("Total Volume: ");
+    Serial.println(totalVolume);  // Debug: Print the calculated volume
+  }
+
+    // Wait for Button 4/DONE to start dispensing
+  if (paymentScreenActive && digitalRead(buttPin4) == LOW) {
+    // Ensure the required amount is reached before dispensing
+    int requiredCoins = 5; // Example: PHP 5.00 minimum for all products
+    if (coinCount >= requiredCoins) {
+        // Calculate dispensing time based on the total volume
+        int dispensingTime = 0;
+
+        switch (selectedProduct) {
+            case 1: // Ariel
+                dispensingTime = (totalVolume * 1000) / (100.0 / 37.0); // 100 mL/min
+                break;
+            case 2: // Downy
+                dispensingTime = (totalVolume * 1000) / (90.0 / 60.0); // 90 mL/min
+                break;
+            case 3: // Joy
+                dispensingTime = (totalVolume * 1000) / (80.0 / 37.0); // 80 mL/min
+                break;
+        }
+
+        // Dispense the product
+        dispensingProduct(selectedProduct == 1 ? "Ariel" : selectedProduct == 2 ? "Downy" : "Joy", selectedProduct, dispensingTime);
+
+        // Show end screen
+        endScreen();
+
+        // Reset for the next transaction
+        selectionMade = false;
+        paymentScreenActive = false;
+        coinCount = 0;
+        selectedProduct = 0;
+        totalVolume = 0; // Reset total volume
+    } else {
+        // Display a message if the required amount is not reached
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Insufficient Payment");
+        lcd.setCursor(0, 1);
+        lcd.print("Min: P 5.00 Required");
+        delay(3000); // Show the message for 3 seconds
     }
   }
-  //   // Reset after payment is completed
-  // if (paymentScreenActive && coinCount >= requiredCoins) {
-  //   // Reset for the next transaction
-  //   selectionMade = false;
-  //   paymentScreenActive = false;
-  //   coinCount = 0;
-  //   selectedProduct = "";
-  // }
 }
-
-
-
-
