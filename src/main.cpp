@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include "NewPing.h"
+#include <EEPROM.h>
 
 //Pin Designations
 #define buttPin1 22   // Pin for Button 1
@@ -13,9 +14,9 @@
 //Universal Coin Selector
 #define COIN_PIN 2  // Coin acceptor signal pin
 //Mosfet Module
-#define MOSFET_Ariel 3  // Pump for Ariel
-#define MOSFET_Downy 4  // Pump for Downy
-#define MOSFET_Joy 5  // Pump for Joy
+#define MOSFET_Ariel 5  // Pump for Ariel
+#define MOSFET_Downy 3  // Pump for Downy
+#define MOSFET_Joy 4  // Pump for Joy
 // Ariel Liquid Detergent Indicator LED
 #define RED_ARIEL 30
 #define YELLOW_ARIEL 32
@@ -25,9 +26,9 @@
 #define YELLOW_DOWNY 38
 #define GREEN_DOWNY 36
 // Joy Dishwashing Liquid Indicator LED
-#define RED_JOY 46
+#define RED_JOY 42
 #define YELLOW_JOY 44
-#define GREEN_JOY 42
+#define GREEN_JOY 46
 //Ultrasonic Sensor for customer verification
 //Ariel
 #define TRIGGER_ARIEL 23
@@ -73,10 +74,18 @@ bool textVisible = true;
 unsigned long button4PressStart = 0; // To track when Button 4 is pressed
 bool button4Held = false;           // To track if Button 4 is being held
 
-int remainVolumeAriel = 3000;
-int remainVolumeDowny = 3000; 
-int remainVolumeJoy = 3000;
+//Stock
+int remainVolumeAriel;
+int remainVolumeDowny;
+int remainVolumeJoy;
 int totalVolume = 0;
+ // Stock Re-Calculation
+ int deductedVolumeAriel = 0;
+ int deductedVolumeDowny = 0;
+ int deductedVolumeJoy = 0;
+ int availableVolumeAriel = 0;
+ int availableVolumeDowny = 0;
+ int availableVolumeJoy = 0;
 
 void coinISR() {
   unsigned long interruptTime = millis();
@@ -119,7 +128,7 @@ void startScreen() {
 }
 
 int arielPaymentConfirmation(int amount) {
-  int arielVolume = (amount / 5) * 20 + (amount % 5) * 4;  // Ariel: PHP 5.00 per 20ml
+  int arielVolume = (amount / 5) * 18 + (amount % 5) * 4;  // Ariel: PHP 5.00 per 20ml
 
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -290,7 +299,7 @@ bool isContainerDetected(int productID) {
   return (distance > 0 && distance <= MAX_DISTANCE);
 }
 
-void dispensingProduct(String product, int productID, int dispensingTime) {
+void dispensingProduct(String product, int productID, unsigned long dispensingTime) {
   // Step 1: Prompt the user to place the container
   lcd.clear();
   lcd.setCursor(0, 1);
@@ -299,27 +308,14 @@ void dispensingProduct(String product, int productID, int dispensingTime) {
       delay(500); // Check every 500 ms
   }
 
-  // Step 2: Display "Dispensing..." message
+  // Step 2: Display "Dispensing..." message with a loading bar
   lcd.clear();
   lcd.setCursor(4, 0);
   lcd.print("Dispensing...");
-  lcd.setCursor(6, 1);
-  lcd.print(product);
+  lcd.setCursor(0, 1);
+  lcd.print("[                ]"); // Empty loading bar
 
-  // Step 3: Display a loading bar based on dispensing time
-  lcd.setCursor(0, 3);
-  lcd.print("[                    ]"); // Empty loading bar
-
-  int totalSteps = 20; // Number of segments in the loading bar
-  int stepDelay = dispensingTime / totalSteps; // Time per segment
-
-  for (int i = 0; i < totalSteps; i++) {
-      lcd.setCursor(1 + i, 3); // Update the loading bar
-      lcd.print("|");
-      delay(stepDelay); // Wait for the step duration
-  }
-
-  // Step 4: Activate the corresponding MOSFET to start dispensing
+  // Step 3: Activate the corresponding MOSFET to start dispensing
   switch (productID) {
       case 1: // Ariel
           digitalWrite(MOSFET_Ariel, HIGH);
@@ -332,10 +328,25 @@ void dispensingProduct(String product, int productID, int dispensingTime) {
           break;
   }
 
-  // Step 5: Dispense for the calculated time
-  delay(dispensingTime);
+  // Step 4: Update the loading bar incrementally
+  unsigned long startTime = millis();
+  unsigned long endTime = startTime + (dispensingTime * 1000);
+  int barLength = 16; // Length of the loading bar
+  while (millis() < endTime) {
+      unsigned long elapsedTime = millis() - startTime;
+      int progress = (elapsedTime * barLength) / (dispensingTime * 1000);
+      lcd.setCursor(1, 1);
+      for (int i = 0; i < barLength; i++) {
+          if (i < progress) {
+              lcd.print("#"); // Fill the bar
+          } else {
+              lcd.print(" "); // Keep the rest empty
+          }
+      }
+      delay(100); // Update every 100 ms
+  }
 
-  // Step 6: Deactivate the MOSFET
+  // Step 5: Deactivate the MOSFET
   switch (productID) {
       case 1: // Ariel
           digitalWrite(MOSFET_Ariel, LOW);
@@ -348,23 +359,88 @@ void dispensingProduct(String product, int productID, int dispensingTime) {
           break;
   }
 
-  // Step 7: Display "Dispensing Done!" message
+  // Step 6: Display "Dispensing Done!" message
   lcd.clear();
   lcd.setCursor(4, 1);
   lcd.print("Dispensing Done!");
   delay(2000); // Show message for 2 seconds
 }
 
+// void dispensingProduct(String product, int productID, unsigned long dispensingTime) {
+//   // Step 1: Prompt the user to place the container
+//   lcd.clear();
+//   lcd.setCursor(0, 1);
+//   lcd.print("Place container...");
+//   while (!isContainerDetected(productID)) {
+//       delay(500); // Check every 500 ms
+//   }
+
+//   // Step 2: Display "Dispensing..." message
+//   lcd.clear();
+//   lcd.setCursor(4, 0);
+//   lcd.print("Dispensing...");
+//   lcd.setCursor(6, 1);
+//   lcd.print(product);
+
+//   // Step 3: Activate the corresponding MOSFET to start dispensing
+//   switch (productID) {
+//       case 1: // Ariel
+//           digitalWrite(MOSFET_Ariel, HIGH);
+//           break;
+//       case 2: // Downy
+//           digitalWrite(MOSFET_Downy, HIGH);
+//           break;
+//       case 3: // Joy
+//           digitalWrite(MOSFET_Joy, HIGH);
+//           break;
+//   }
+//   // Step 4: Blocking delay using delay()
+//   delay(dispensingTime*1000);
+//   Serial.print("Dispensing Time: ");
+//   Serial.println(dispensingTime); // Debug message
+
+//   // Step 5: Deactivate the MOSFET
+//   switch (productID) {
+//       case 1: // Ariel
+//           digitalWrite(MOSFET_Ariel, LOW);
+//           break;
+//       case 2: // Downy
+//           digitalWrite(MOSFET_Downy, LOW);
+//           break;
+//       case 3: // Joy
+//           digitalWrite(MOSFET_Joy, LOW);
+//           break;
+//   }
+
+//   // Step 6: Display "Dispensing Done!" message
+//   lcd.clear();
+//   lcd.setCursor(4, 1);
+//   lcd.print("Dispensing Done!");
+//   delay(2000); // Show message for 2 seconds
+// }
+
 void endScreen() {
   lcd.clear();
   lcd.setCursor(4, 1);
   lcd.print("Thank You!");
   delay(3000); // 3-second delay
+
+  Serial.println("Restarting Arduino...");
+  asm volatile ("jmp 0"); // Restart Arduino
 }
 
 void setup() {
   //Set up Serial for Debugging
   Serial.begin(115200);
+  // Read remaining volumes from EEPROM
+  EEPROM.get(0, remainVolumeAriel);
+  EEPROM.get(sizeof(int), remainVolumeDowny);
+  EEPROM.get(2 * sizeof(int), remainVolumeJoy);
+
+  // If EEPROM values are invalid (e.g., uninitialized), set default values
+  if (remainVolumeAriel <= 0 || remainVolumeAriel > 2500) remainVolumeAriel = 2500;
+  if (remainVolumeDowny <= 0 || remainVolumeDowny > 2500) remainVolumeDowny = 2500;
+  if (remainVolumeJoy <= 0 || remainVolumeJoy > 2500) remainVolumeJoy = 2500;
 
   //Set up LCD
   lcd.init();
@@ -616,59 +692,69 @@ void loop() {
     switch (selectedProduct) {
         case 1: // Ariel
             totalVolume = arielPaymentConfirmation(coinCount);
+            deductedVolumeAriel = arielPaymentConfirmation(coinCount);
             break;
         case 2: // Downy
             totalVolume = downyPaymentConfirmation(coinCount);
+            deductedVolumeDowny = downyPaymentConfirmation(coinCount);
             break;
         case 3: // Joy
             totalVolume = joyPaymentConfirmation(coinCount);
+            deductedVolumeJoy = joyPaymentConfirmation(coinCount);
             break;
     }
 
     Serial.print("Total Volume: ");
     Serial.println(totalVolume);  // Debug: Print the calculated volume
   }
-
-    // Wait for Button 4/DONE to start dispensing
-  if (paymentScreenActive && digitalRead(buttPin4) == LOW) {
-    // Ensure the required amount is reached before dispensing
-    int requiredCoins = 5; // Example: PHP 5.00 minimum for all products
-    if (coinCount >= requiredCoins) {
-        // Calculate dispensing time based on the total volume
-        int dispensingTime = 0;
-
-        switch (selectedProduct) {
+    //      // Wait for Button 4/DONE to start dispensing
+    if (paymentScreenActive && digitalRead(buttPin4) == LOW) {
+      // Ensure the required amount is reached before dispensing
+      int requiredCoins = 5; // Example: PHP 5.00 minimum for all products
+      if (coinCount >= requiredCoins) {
+          // Calculate dispensing time based on the total volume
+          int dispensingTime = 0;
+  
+          switch (selectedProduct) {
             case 1: // Ariel
-                dispensingTime = (totalVolume * 1000) / (100.0 / 37.0); // 100 mL/min
+                dispensingTime = (deductedVolumeAriel * 90) / 100; // 100 mL in 85 seconds
+                remainVolumeAriel -= deductedVolumeAriel; // Update remaining stock
+                EEPROM.put(0, remainVolumeAriel);
                 break;
             case 2: // Downy
-                dispensingTime = (totalVolume * 1000) / (90.0 / 60.0); // 90 mL/min
+                dispensingTime = (deductedVolumeDowny * 60) / 100; // 100 mL in 60 seconds
+                remainVolumeDowny -= deductedVolumeDowny; // Update remaining stock
+                EEPROM.put(sizeof(int), remainVolumeDowny); // Save to EEPROM
                 break;
             case 3: // Joy
-                dispensingTime = (totalVolume * 1000) / (80.0 / 37.0); // 80 mL/min
+                dispensingTime = (deductedVolumeJoy * 96) / 100; // 100 mL in 95 seconds
+                remainVolumeJoy -= deductedVolumeJoy; // Update remaining stock
+                EEPROM.put(2 * sizeof(int), remainVolumeJoy); // Save to EEPROM
                 break;
         }
-
+        Serial.print("Dispensing Time: ");
+        Serial.println(dispensingTime);
+  
         // Dispense the product
         dispensingProduct(selectedProduct == 1 ? "Ariel" : selectedProduct == 2 ? "Downy" : "Joy", selectedProduct, dispensingTime);
-
-        // Show end screen
+  
+        // Show end screen (which now includes the restart logic)
         endScreen();
-
+  
         // Reset for the next transaction
         selectionMade = false;
         paymentScreenActive = false;
         coinCount = 0;
         selectedProduct = 0;
         totalVolume = 0; // Reset total volume
-    } else {
-        // Display a message if the required amount is not reached
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("Insufficient Payment");
-        lcd.setCursor(0, 1);
-        lcd.print("Min: P 5.00 Required");
-        delay(3000); // Show the message for 3 seconds
-    }
+      } else {
+          // Display a message if the required amount is not reached
+          lcd.clear();
+          lcd.setCursor(0, 0);
+          lcd.print("Insufficient Payment");
+          lcd.setCursor(0, 1);
+          lcd.print("Min: P 5.00 Required");
+          delay(3000); // Show the message for 3 seconds
+      }
   }
 }
