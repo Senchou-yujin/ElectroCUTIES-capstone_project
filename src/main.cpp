@@ -1,3 +1,4 @@
+
 #include <Arduino.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
@@ -9,6 +10,15 @@
 #define buttPin2 24   // Pin for Button 2
 #define buttPin3 26   // Pin for Button 3
 #define buttPin4 28   // Pin for Button 4
+//NEW Buttons
+#define RESET_BUTTON_PIN 54 // Pin for Reset Button
+#define CHANGE_DONE_BUTTON 50  // Button to enter/exit price-changing mode
+#define WHOLE_NUMBER_BUTTON 51 // Button to change whole number part of the price
+#define DECIMAL_BUTTON 52      // Button to change decimal part of the price
+#define PRODUCT_CHANGE_BUTTON 53 // Button to switch between products
+#define WHOLE_NUMBER_UNDO_BUTTON 48 // Button to undo whole number changes
+#define DECIMAL_UNDO_BUTTON 49      // Button to undo decimal changes
+
 #define BUZZER_PIN 53 // Pin for Buzzer Module
 #define Relay_PIN 7 // Pin for the Coin Slot Auto Shutdown
 //Universal Coin Selector
@@ -87,6 +97,16 @@ int totalVolume = 0;
  int availableVolumeDowny = 0;
  int availableVolumeJoy = 0;
 
+ // Variables to store prices for each product
+float priceAriel = 5.0; // Default price for Ariel
+float priceDowny = 5.0; // Default price for Downy
+float priceJoy = 5.0;   // Default price for Joy
+
+// Variables for price-changing mode
+bool priceChangeMode = false;
+int selectedProductForPrice = 1; // 1 = Ariel, 2 = Downy, 3 = Joy
+unsigned long changeButtonPressStart = 0; // To track when the "Change/Done" button is held
+
 void coinISR() {
   unsigned long interruptTime = millis();
   
@@ -111,12 +131,17 @@ void beeptwice() {
   beep();
 }
 
-void CoinSlotON() {
-    digitalWrite(Relay_PIN, HIGH); // Activate relay (disable coin slot)
-}
+void resetStock() {
+  remainVolumeAriel = 2500;
+  remainVolumeDowny = 2500;
+  remainVolumeJoy = 2500;
 
-void CoinSlotOFF() {
-    digitalWrite(Relay_PIN, LOW); // Deactivate relay (enable coin slot)
+  // Save the default values to EEPROM
+  EEPROM.put(0, remainVolumeAriel);
+  EEPROM.put(sizeof(int), remainVolumeDowny);
+  EEPROM.put(2 * sizeof(int), remainVolumeJoy);
+
+  Serial.println("Stock has been reset to 2500 mL for all products.");
 }
 
 void startScreen() {
@@ -128,7 +153,7 @@ void startScreen() {
 }
 
 int arielPaymentConfirmation(int amount) {
-  int arielVolume = (amount / 5) * 18 + (amount % 5) * 4;  // Ariel: PHP 5.00 per 20ml
+  int arielVolume = (amount / priceAriel) * 18 + (amount % 5) * 4;  // Ariel: PHP 5.00 per 20ml
 
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -147,7 +172,7 @@ int arielPaymentConfirmation(int amount) {
 }
 
 int downyPaymentConfirmation(int amount) {
-  int downyVolume = (amount / 5) * 18 + (amount % 5) * 3.6;  // Downy: PHP 5.00 per 18ml
+  int downyVolume = (amount / priceDowny) * 18 + (amount % 5) * 3.6;  // Downy: PHP 5.00 per 18ml
 
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -166,7 +191,7 @@ int downyPaymentConfirmation(int amount) {
 }
 
 int joyPaymentConfirmation(int amount) {
-  int joyVolume = (amount / 5) * 16 + (amount % 5) * 3.2;  // Joy: PHP 5.00 per 16ml
+  int joyVolume = (amount / priceJoy) * 16 + (amount % 5) * 3.2;  // Joy: PHP 5.00 per 16ml
 
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -299,6 +324,8 @@ bool isContainerDetected(int productID) {
   return (distance > 0 && distance <= MAX_DISTANCE);
 }
 
+
+// With Loading Bar 
 void dispensingProduct(String product, int productID, unsigned long dispensingTime) {
   // Step 1: Prompt the user to place the container
   lcd.clear();
@@ -363,61 +390,12 @@ void dispensingProduct(String product, int productID, unsigned long dispensingTi
   lcd.clear();
   lcd.setCursor(4, 1);
   lcd.print("Dispensing Done!");
+  beep();
+  delay(500);
+  beep();// Play two beeps
   delay(2000); // Show message for 2 seconds
 }
 
-// void dispensingProduct(String product, int productID, unsigned long dispensingTime) {
-//   // Step 1: Prompt the user to place the container
-//   lcd.clear();
-//   lcd.setCursor(0, 1);
-//   lcd.print("Place container...");
-//   while (!isContainerDetected(productID)) {
-//       delay(500); // Check every 500 ms
-//   }
-
-//   // Step 2: Display "Dispensing..." message
-//   lcd.clear();
-//   lcd.setCursor(4, 0);
-//   lcd.print("Dispensing...");
-//   lcd.setCursor(6, 1);
-//   lcd.print(product);
-
-//   // Step 3: Activate the corresponding MOSFET to start dispensing
-//   switch (productID) {
-//       case 1: // Ariel
-//           digitalWrite(MOSFET_Ariel, HIGH);
-//           break;
-//       case 2: // Downy
-//           digitalWrite(MOSFET_Downy, HIGH);
-//           break;
-//       case 3: // Joy
-//           digitalWrite(MOSFET_Joy, HIGH);
-//           break;
-//   }
-//   // Step 4: Blocking delay using delay()
-//   delay(dispensingTime*1000);
-//   Serial.print("Dispensing Time: ");
-//   Serial.println(dispensingTime); // Debug message
-
-//   // Step 5: Deactivate the MOSFET
-//   switch (productID) {
-//       case 1: // Ariel
-//           digitalWrite(MOSFET_Ariel, LOW);
-//           break;
-//       case 2: // Downy
-//           digitalWrite(MOSFET_Downy, LOW);
-//           break;
-//       case 3: // Joy
-//           digitalWrite(MOSFET_Joy, LOW);
-//           break;
-//   }
-
-//   // Step 6: Display "Dispensing Done!" message
-//   lcd.clear();
-//   lcd.setCursor(4, 1);
-//   lcd.print("Dispensing Done!");
-//   delay(2000); // Show message for 2 seconds
-// }
 
 void endScreen() {
   lcd.clear();
@@ -452,6 +430,14 @@ void setup() {
   pinMode(buttPin2, INPUT_PULLUP);
   pinMode(buttPin3, INPUT_PULLUP);
   pinMode(buttPin4, INPUT_PULLUP);
+  pinMode(RESET_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(CHANGE_DONE_BUTTON, INPUT_PULLUP);
+  pinMode(WHOLE_NUMBER_BUTTON, INPUT_PULLUP);
+  pinMode(DECIMAL_BUTTON, INPUT_PULLUP);
+  pinMode(PRODUCT_CHANGE_BUTTON, INPUT_PULLUP);
+  pinMode(WHOLE_NUMBER_UNDO_BUTTON, INPUT_PULLUP);
+  pinMode(DECIMAL_UNDO_BUTTON, INPUT_PULLUP);
+
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(Relay_PIN, OUTPUT);
   //Universal Coin Selector
@@ -494,6 +480,107 @@ void setup() {
 void loop() {
   unsigned long currentMillis = millis();
   int selectButton = 0;
+
+  // Check if "Change/Done" button is held to enter/exit price-changing mode
+  if (digitalRead(CHANGE_DONE_BUTTON) == LOW) {
+    if (changeButtonPressStart == 0) {
+      changeButtonPressStart = currentMillis; // Start timing
+    } else if (currentMillis - changeButtonPressStart >= 2000) { // Hold for 2 seconds
+      priceChangeMode = !priceChangeMode; // Toggle price-changing mode
+      changeButtonPressStart = 0; // Reset the timer
+      if (priceChangeMode) {
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Price Change Mode");
+        lcd.setCursor(0, 1);
+        lcd.print("Product: Ariel");
+        lcd.setCursor(0, 2);
+        lcd.print("Price: ");
+        lcd.print(priceAriel, 2); // Display price with 2 decimal places
+      } else {
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Exiting Price Mode");
+        delay(2000);
+        lcd.clear();
+      }
+    }
+  } else {
+    changeButtonPressStart = 0; // Reset if button is released
+  }
+
+  // Handle price-changing logic
+  if (priceChangeMode) {
+    // Switch between products
+    // Adjust whole number part of the price
+  if (digitalRead(WHOLE_NUMBER_BUTTON) == LOW) {
+    delay(200); // Debounce
+    if (selectedProductForPrice == 1) priceAriel += 1.0;
+    else if (selectedProductForPrice == 2) priceDowny += 1.0;
+    else if (selectedProductForPrice == 3) priceJoy += 1.0;
+
+    lcd.setCursor(0, 2);
+    lcd.print("Price: ");
+    if (selectedProductForPrice == 1) lcd.print(priceAriel, 2);
+    else if (selectedProductForPrice == 2) lcd.print(priceDowny, 2);
+    else if (selectedProductForPrice == 3) lcd.print(priceJoy, 2);
+  }
+
+  // Undo whole number part of the price
+  if (digitalRead(WHOLE_NUMBER_UNDO_BUTTON) == LOW) {
+    delay(200); // Debounce
+    if (selectedProductForPrice == 1 && priceAriel >= 1.0) priceAriel -= 1.0;
+    else if (selectedProductForPrice == 2 && priceDowny >= 1.0) priceDowny -= 1.0;
+    else if (selectedProductForPrice == 3 && priceJoy >= 1.0) priceJoy -= 1.0;
+
+    lcd.setCursor(0, 2);
+    lcd.print("Price: ");
+    if (selectedProductForPrice == 1) lcd.print(priceAriel, 2);
+    else if (selectedProductForPrice == 2) lcd.print(priceDowny, 2);
+    else if (selectedProductForPrice == 3) lcd.print(priceJoy, 2);
+  }
+
+  // Adjust decimal part of the price
+  if (digitalRead(DECIMAL_BUTTON) == LOW) {
+    delay(200); // Debounce
+    if (selectedProductForPrice == 1) priceAriel += 0.1;
+    else if (selectedProductForPrice == 2) priceDowny += 0.1;
+    else if (selectedProductForPrice == 3) priceJoy += 0.1;
+
+    lcd.setCursor(0, 2);
+    lcd.print("Price: ");
+    if (selectedProductForPrice == 1) lcd.print(priceAriel, 2);
+    else if (selectedProductForPrice == 2) lcd.print(priceDowny, 2);
+    else if (selectedProductForPrice == 3) lcd.print(priceJoy, 2);
+  }
+
+  // Undo decimal part of the price
+  if (digitalRead(DECIMAL_UNDO_BUTTON) == LOW) {
+    delay(200); // Debounce
+    if (selectedProductForPrice == 1 && priceAriel >= 0.1) priceAriel -= 0.1;
+    else if (selectedProductForPrice == 2 && priceDowny >= 0.1) priceDowny -= 0.1;
+    else if (selectedProductForPrice == 3 && priceJoy >= 0.1) priceJoy -= 0.1;
+
+    lcd.setCursor(0, 2);
+    lcd.print("Price: ");
+    if (selectedProductForPrice == 1) lcd.print(priceAriel, 2);
+    else if (selectedProductForPrice == 2) lcd.print(priceDowny, 2);
+    else if (selectedProductForPrice == 3) lcd.print(priceJoy, 2);
+  }
+
+    return; // Skip the rest of the loop while in price-changing mode
+  }
+
+  if (digitalRead(RESET_BUTTON_PIN) == LOW) {
+      delay(50); // Debounce delay
+      if (digitalRead(RESET_BUTTON_PIN) == LOW) { // Confirm button press
+          resetStock(); // Call the resetStock function
+          lcd.clear();
+          lcd.setCursor(0, 1);
+          lcd.print("Stock Reset Done!");
+          delay(2000); // Show confirmation message
+      }
+  }
 
   // Handle alternating screens (start screen and product selection)
   if (!selectionMade && (currentMillis - lastScreenChange >= 3000)) {
@@ -717,17 +804,17 @@ void loop() {
   
           switch (selectedProduct) {
             case 1: // Ariel
-                dispensingTime = (deductedVolumeAriel * 90) / 100; // 100 mL in 85 seconds
+                dispensingTime = (deductedVolumeAriel * 50) / 100; // 100 mL in 51 seconds
                 remainVolumeAriel -= deductedVolumeAriel; // Update remaining stock
                 EEPROM.put(0, remainVolumeAriel);
-                break;
+                break;                                                                                                                  
             case 2: // Downy
-                dispensingTime = (deductedVolumeDowny * 60) / 100; // 100 mL in 60 seconds
+                dispensingTime = (deductedVolumeDowny *61.1) / 100; // 100 mL in 61.1 seconds
                 remainVolumeDowny -= deductedVolumeDowny; // Update remaining stock
                 EEPROM.put(sizeof(int), remainVolumeDowny); // Save to EEPROM
                 break;
             case 3: // Joy
-                dispensingTime = (deductedVolumeJoy * 96) / 100; // 100 mL in 95 seconds
+                dispensingTime = (deductedVolumeJoy * 122) / 100; // 100 mL in 122 seconds
                 remainVolumeJoy -= deductedVolumeJoy; // Update remaining stock
                 EEPROM.put(2 * sizeof(int), remainVolumeJoy); // Save to EEPROM
                 break;
@@ -737,7 +824,7 @@ void loop() {
   
         // Dispense the product
         dispensingProduct(selectedProduct == 1 ? "Ariel" : selectedProduct == 2 ? "Downy" : "Joy", selectedProduct, dispensingTime);
-  
+        
         // Show end screen (which now includes the restart logic)
         endScreen();
   
